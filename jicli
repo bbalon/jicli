@@ -29,6 +29,10 @@ class Options
         options[:list] = option
       end
 
+      opts.on("-s", "--search JQL", "Search issues with JQL specified") do |option|
+        options[:search] = option
+      end
+
       opts.on("-c", "--comment MESSAGE", "Comment on issue") do |option|
         options[:comment] = option
       end
@@ -61,12 +65,12 @@ class JiraConnect
     @username = username
     @password = password
     @hostname = hostname
-    @uri = URI.parse(@hostname+'/rest/api/latest/issue/')
+    @uri = URI.parse(@hostname+'/rest/api/latest')
     @session = Net::HTTP.new(@uri.host, @uri.port)
   end
 
   def getInfo(issue)
-    connect = Net::HTTP::Get.new(@uri.request_uri+issue)
+    connect = Net::HTTP::Get.new(@uri.request_uri+'/issue/'+issue)
     connect.basic_auth @username, @password
     connect["Content-Type"] = "application/json"
     respond = @session.request(connect)
@@ -74,11 +78,19 @@ class JiraConnect
   end
 
   def comment(issue, comment)
-    connect = Net::HTTP::Post.new(@uri.request_uri+issue+'/comment')
+    connect = Net::HTTP::Post.new(@uri.request_uri'/issue/'+issue+'/comment')
     connect.basic_auth @username, @password
     connect["Content-Type"] = "application/json"
     body = '{"body":"'+comment+'"}'
     respond = @session.request(connect, body)
+    jsonParse(respond.body)
+  end
+
+  def search(jql)
+    connect = Net::HTTP::Get.new(URI.escape(@uri.request_uri+'/search?jql='+jql))
+    connect.basic_auth @username, @password
+    connect["Content-Type"] = "application/json"
+    respond = @session.request(connect)
     jsonParse(respond.body)
   end
 
@@ -89,6 +101,17 @@ class JiraConnect
 end
 
 jira = JiraConnect.new(options[:hostname], options[:username], options[:password])
+
+if options[:search]
+  search = jira.search options[:search]
+  if search['total'] > 0
+    search['issues'].each do |issue|
+      puts "Key: "+issue['key']
+      puts "  Summary: "+issue['fields']['summary']
+    end
+  end
+  exit
+end
 
 if options[:list]
   info = jira.getInfo options[:issue]
