@@ -1,0 +1,112 @@
+#!/usr/bin/env ruby
+
+require 'net/http'
+require 'json'
+require 'optparse'
+require 'pp'
+
+class Options
+  def self.parse(args)
+    options = {}
+    options[:hostname] = "http://jira"
+
+    opt_parser = OptionParser.new do |opts|
+      opts.banner = "Usage: jicli [options]"
+
+      opts.on("-i", "--issue ISSUE-KEY", String, "Issue") do |i|
+        options[:issue] = i
+      end
+
+      opts.on("-u", "--username USERNAME", String, "Username") do |u|
+        options[:username] = u
+      end
+
+      opts.on("-p", "--password PASSWORD", String, "Password") do |p|
+        options[:password] = p
+      end
+
+      opts.on("-l", "--list", "Print issue fields") do |option|
+        options[:list] = option
+      end
+
+      opts.on("-c", "--comment MESSAGE", "Comment on issue") do |option|
+        options[:comment] = option
+      end
+
+      opts.on("-q", "--quiet", "No outputs are printed") do |option|
+        options[:quiet] = option
+      end
+
+      opts.on("-h", "--host HOSTNAME", "Hostname") do |option|
+        options[:hostname] = option
+      end
+
+      opts.on("-?", "--help", "This help message") do |option|
+        puts opts
+        exit
+      end
+
+    end
+
+    opt_parser.parse!(args)
+    options
+  end
+end
+
+options = Options.parse(ARGV)
+
+
+class JiraConnect
+  def initialize(hostname, username, password)
+    @username = username
+    @password = password
+    @hostname = hostname
+    @uri = URI.parse(@hostname+'/rest/api/latest/issue/')
+    @session = Net::HTTP.new(@uri.host, @uri.port)
+  end
+
+  def getInfo(issue)
+    connect = Net::HTTP::Get.new(@uri.request_uri+issue)
+    connect.basic_auth @username, @password
+    connect["Content-Type"] = "application/json"
+    respond = @session.request(connect)
+    jsonParse(respond.body)
+  end
+
+  def comment(issue, comment)
+    connect = Net::HTTP::Post.new(@uri.request_uri+issue+'/comment')
+    connect.basic_auth @username, @password
+    connect["Content-Type"] = "application/json"
+    body = '{"body":"'+comment+'"}'
+    respond = @session.request(connect, body)
+    jsonParse(respond.body)
+  end
+
+  private
+    def jsonParse(parse)
+      JSON.parse(parse)
+    end
+end
+
+jira = JiraConnect.new(options[:hostname], options[:username], options[:password])
+
+if options[:list]
+  info = jira.getInfo options[:issue]
+  puts "Project: "+info['fields']['project']['name']
+  puts "Summary: "+info['fields']['summary']
+  if info['fields']['comment']['total'] > 0
+    puts "Comments: "
+    info['fields']['comment']['comments'].each do |comment|
+      puts "  Author: " + comment['author']['displayName']
+      puts "    Comment: " + comment['body']
+    end
+  end 
+  exit
+end
+
+if options[:comment]
+  comment_info = jira.comment options[:issue], options[:comment]
+  if !options[:quiet]
+    puts "You commented on bug: "+comment_info[:body]
+  end
+end
